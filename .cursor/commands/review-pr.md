@@ -34,10 +34,6 @@ Do not use my “current branch” or editor file to choose a different project.
 
 5. If **multiple** toplevels match the same `owner/repo` (unusual): only then ask me to paste the absolute path to the intended clone. This is path disambiguation, not a multi-project menu.
 
-### Optional: `gh` for metadata
-
-If the GitHub CLI is available and authenticated, you may use `gh pr view <n> --repo owner/repo --json baseRefName,headRefName,title` (or equivalent) to confirm base/head names. Prefer file access under `REPO` for reading code; use `gh` to disambiguate PR targets when helpful.
-
 ### Confirm before diffing
 
 One line, then continue to Step 1:
@@ -50,27 +46,25 @@ Use `git -C "$REPO" …` for **every** git invocation. Never `cd`. Never assume 
 
 ## Step 1 — Establish scope
 
+**Do not use the local codebase to get the diff.** Use the GitHub API or CLI (`gh`) to fetch the diff directly from GitHub.
+
 **For a PR link** (`/pull/n`):
 
-- Prefer the diff GitHub considers the PR: after `git -C "$REPO" fetch origin` (and fetch of the PR head if you use `pull/n/head` refs), set `BASE` and `HEAD` to the merge base and PR head GitHub would use. Concretely, you may:
-  - use `gh pr diff n --repo owner/repo` to list the patch for triage, and/or
-  - check out the PR head with `gh pr checkout n` in `$REPO` **or** fetch `pull/n/head` and compare to the **base branch** named in the PR (from `gh pr view`).
+- Run `gh pr diff n --repo owner/repo` to list the patch for triage.
+- **CRITICAL for line number accuracy:** Check out the PR locally (e.g., `gh pr checkout n` in `$REPO`) so that when you read files for context, the line numbers perfectly match the PR's `HEAD`.
 
-**For compare or tree links** (no PR number): take `base` and `head` from the parsed URL (compare view gives both; tree links supply `head` only—use `DEFAULT` as `base`). Fetch `origin` and the head branch if needed, then compute `BASE=$(git -C "$REPO" merge-base <base-ref> <head-ref>)` and `HEAD=<head-ref>` (often `origin/<branch>`). If the compare URL uses SHAs, use those refs after fetching.
+**For compare or tree links** (no PR number):
 
-Use the resolved `BASE` / `HEAD` (or PR equivalent) for:
+- Use `gh api repos/<owner>/<repo>/compare/<base>...<head>` or equivalent commands to fetch the comparison diff from GitHub.
+- Checkout the `head` branch locally (`git -C "$REPO" fetch origin <head> && git -C "$REPO" checkout <head>`).
 
-```bash
-git -C "$REPO" log --oneline "$BASE..$HEAD"
-git -C "$REPO" diff --stat "$BASE..$HEAD"
-git -C "$REPO" diff "$BASE..$HEAD"
-```
+Use the local codebase (`$REPO`) **only** to fetch related files and read surrounding context when the diff alone isn't enough. Do not use local `git diff` commands for the review itself.
 
 If the diff is large (>1000 lines or >30 files), say so up front and propose a review strategy (review by subsystem, or ask which area to prioritize) before generating findings. Do not silently truncate.
 
 ## Step 2 — Read what you're reviewing
 
-For every non-trivial changed file, open it and read enough surrounding context to understand the call sites, not just the diff hunks. **Only open files inside `$REPO`.** A change that looks fine in isolation can be wrong because of how its caller uses it. Specifically check for:
+For every non-trivial changed file, open it in the local codebase (`$REPO`) and read enough surrounding context to understand the call sites, not just the diff hunks. **Only open files inside `$REPO`.** A change that looks fine in isolation can be wrong because of how its caller uses it. Specifically check for:
 
 - Functions/types whose signatures changed — find every caller within this repo.
 - New env vars, config, or feature flags — confirm they're wired in deploy configs and `.env.example` if applicable.
@@ -85,6 +79,7 @@ Evaluate the diff against each of these. Skip dimensions that genuinely don't ap
 ### Repository Conventions
 
 Before evaluating the diff, dynamically find and read the `.cursor/rules` files in the resolved repository (e.g., by listing files in `$REPO/.cursor/rules/` and reading their contents).
+
 1. Summarize these rules on the fly.
 2. Include this summary as a rubric in your review.
 3. Actively evaluate the PR/branch against these dynamically retrieved repository conventions and call out any violations.
@@ -154,25 +149,74 @@ Before evaluating the diff, dynamically find and read the `.cursor/rules` files 
 
 Lead the report with the confirmation line from Step 0 (owner/repo, PR or ref range, `local=$REPO`). Then:
 
-**Summary** — 2–3 sentences: what this change does, your overall recommendation (`approve` / `approve with comments` / `request changes` / `block`), and the single most important thing the author should fix first.
+### **Summary** — 2–3 sentences: what this change does, and the single most important thing the author should fix first.
 
-**Blocking issues** — anything that must be fixed before merge. Each entry:
+Generate a specific **Verdict** at the end of your summary based on the review results:
 
-- File and line range
-- What's wrong
-- Why it matters (concrete failure mode, not "best practice says")
-- Suggested fix (code snippet if small)
+- If there are no issues/comments at all: "Verdict: LGTM"
+- If there are non-blocking suggestions or nits but no blocking issues: "Verdict: LG. Approved with comments."
+- If there are blocking issues: "Verdict: Changes requested. Check comments."
 
-**Non-blocking suggestions** — same format, but stuff that would improve the change without gating it.
+### **Number the review result items** sequentially across all categories below for identification.
 
-**Nits** — formatting, naming, minor cleanup. Keep terse, one line each. Group if many.
+### **Blocking issues** — anything that must be fixed before merge. Each entry:
 
-**Questions for the author** — things you genuinely can't tell from the diff (intent, missing context, cross-repo implications). Don't pad with rhetorical questions.
+<number>. File and line range
 
-**Things you checked and they look good** — short list. This is calibration, not flattery; it tells me what you actually verified vs. what you skipped.
+- **Issue:** What's wrong
+- **Why it matters:** concrete failure mode, not "best practice says"
+- **Suggested fix:** code snippet if small
+
+### **Non-blocking suggestions** — same format, but stuff that would improve the change without gating it.
+
+### **Nits** — formatting, naming, minor cleanup. Keep terse, one line each. Group if many.
+
+### **Questions for the author** — things you genuinely can't tell from the diff (intent, missing context, cross-repo implications). Don't pad with rhetorical questions.
+
+### **Things you checked and they look good** — short list. This is calibration, not flattery; it tells me what you actually verified vs. what you skipped.
+
+## Step 5 — Verdict and Commenting to the PR
+
+**IMPORTANT: Do not ask this question until AFTER you have printed the entire review report.**
+
+At the end of your review, **ask me how I want to proceed using exactly the following question format and options**. (Output this as regular text. Do NOT use the `AskQuestion` tool, so that the review is fully visible to the user):
+
+**How would you like to proceed with the PR review via `gh`?**
+A. Perform suggested verdict
+B. Comment all the issues only
+C. Comment all issues and perform suggested verdict
+
+If I choose an option that involves submitting the verdict and/or comments, use the `gh pr review` command to post the selected review items and/or the final verdict message.
+
+- For **LGTM**: `gh pr review --approve -b "LGTM"`
+- For **LG. Approved with comments.**: `gh pr review --approve -b "LG. Approved with comments."`
+- For **Changes requested. Check comments.**: `gh pr review --request-changes -b "Changes requested. Check comments."`
+
+When creating the line-by-line PR comment(s) alongside the review, use the following format for each item:
+
+```markdown
+### Issue:
+
+<Explain the issue>
+
+### Why it matters:
+
+<Explanation>
+
+### Suggested fix:
+
+<Fix and explanation>
+```
+
+**Notes on comments:**
+
+- Add proper formatting to elements like code.
+- Add the comment to the correct lines the issue is referred to (e.g., using `gh pr review --comment -b "..." -f <file> -l <line>` or similar, or just clearly specifying the file/line if adding a general comment).
+- Use GitHub format when suggesting code changes (e.g., ` ```suggestion ` blocks).
 
 ## Constraints
 
+- **CRITICAL: Line Number Accuracy.** You MUST verify the exact line numbers by reading the checked-out file in `$REPO` (e.g., using file reading tools to view the specific lines). Do not guess or calculate line numbers purely from diff hunks (`@@ ... @@`), as LLMs frequently get this wrong. Ensure the code you are targeting exists exactly at the cited line number in the `HEAD` version before suggesting it.
 - Cite file:line for every finding, with paths relative to `$REPO`. No vague "somewhere in the auth module" feedback.
 - Severity matters. Do not list a missing JSDoc comment next to a SQL injection. If everything is "important," nothing is.
 - If you're not sure something is a bug, say "possible issue" and explain what you'd need to verify it.
