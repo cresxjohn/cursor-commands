@@ -7,6 +7,7 @@ Perform a rigorous code review of the changes described by a **GitHub pull reque
 - **PR scope (diff, metadata, file contents, code search):** GitHub only via `gh` or the GitHub API. Do not use local `git diff`, `git checkout`, or the checked-out branch to determine what changed.
 - **Repository conventions (Cursor rules, Bugbot):** Read from the matching **local workspace clone** without changing its branch or working tree. Do not fetch `.cursor/rules` from GitHub unless no local clone exists.
 - **Maximize Parallelism:** Group independent tool calls. Once the PR metadata and file list are known (Step 1), fetch GitHub file contents (Step 2a), local Cursor rules (Step 2b), and Jira ticket details (Step 2c) **concurrently in a single parallel tool call batch** to speed up the review.
+- **Jira requirements:** When a ticket ID is in the PR title/body, fetch description, **all comments**, and **attachments** via Atlassian MCP — requirements often change in comments or mockups.
 
 ## Step 0 — GitHub link (required)
 
@@ -48,7 +49,7 @@ Use this prefix on **all** review-produced files: `review.json`, drafts, logs, e
 One line, then continue to Step 1:
 
 ```
-Reviewing: owner/repo  <PR#n or base...head>  ref=<head-sha-or-ref>  artifact=<REVIEW_ARTIFACT_ID>  rules=<local|github|none>
+Reviewing: owner/repo  <PR#n or base...head>  ref=<head-sha-or-ref>  artifact=<REVIEW_ARTIFACT_ID>  jira=<TICKET-ID|none>  rules=<local|github|none>
 ```
 
 Every `gh` invocation must include `--repo owner/repo` when the subcommand supports it.
@@ -69,7 +70,7 @@ gh pr diff <n> --repo owner/repo
 ```
 
 Store `HEAD_SHA` = `headRefOid`, `HEAD_REF` = `headRefName`, `BASE_REF` = `baseRefName`, `PR_NUMBER` = `number` (when present).
-**Look for a Jira ticket ID (e.g., `XXX-1234`) in the PR `title` or `body`.**
+**Look for a Jira ticket ID (e.g., `XXX-1234`) in the PR `title` or `body`.** Store as `JIRA_KEY` when found.
 
 **Compare or tree** (no PR number):
 
@@ -191,10 +192,29 @@ If neither local rules nor GitHub rules exist, note “no `.cursor/rules` found�
 
 ### 2c. Fetch Business Requirements (Jira)
 
-If a Jira ticket ID was found in the PR title or body:
-1. Use the `user-mcp-atlassian` MCP server (e.g., `jira_get_issue`) to fetch the ticket details.
-2. Read the description, focusing specifically on the **Acceptance Criteria** and **Steps to Reproduce** (if it's a bug).
-3. If no Jira ticket is found, note "No Jira ticket found in PR" and evaluate based on the PR description alone.
+If `JIRA_KEY` was found in the PR title or body, fetch the **full ticket context** via `user-mcp-atlassian`. Run these **in parallel** with 2a/2b when possible:
+
+1. **`jira_get_issue`** — issue summary, description, type, labels, and comments:
+   - Set `comment_limit` to **100** (read **all** comments — requirements and constraints often appear there, not in the description).
+   - Use `expand=renderedFields` when available for readable acceptance criteria.
+   - Note `issuetype.name` (Bug vs Story/Feature) — affects how strictly to gate on acceptance criteria vs. implementation gaps.
+
+2. **`jira_get_issue_images`** — inline image attachments (mockups, screenshots, Figma exports). Compare UI in the PR against what the ticket shows.
+
+3. **`jira_download_attachments`** — non-image attachments (specs, CSVs, logs, PDFs). Skim for requirements, edge cases, or repro steps not in the description.
+
+**What to extract:**
+
+| Source | Focus |
+|--------|--------|
+| Description | Acceptance criteria, steps to reproduce (bugs), scope |
+| Comments | Scope changes, clarifications, QA notes, "actually we need…" — treat newer comments as potentially overriding older text |
+| Images | Expected UI layout, labels, empty/error states |
+| Other attachments | Data samples, repro payloads, written specs |
+
+If no Jira ticket is found, note `jira=none` and evaluate based on the PR description alone.
+
+If Jira MCP is unavailable or the ticket cannot be fetched, note the failure and proceed from the PR body only — do not invent ticket requirements.
 
 ## Step 3 — Review dimensions
 
@@ -202,9 +222,10 @@ Evaluate the diff against each of these. Skip dimensions that genuinely don't ap
 
 ### Requirements & Acceptance Criteria
 
-- Cross-check the diff against the Jira ticket's Acceptance Criteria. 
+- Cross-check the diff against the Jira ticket — **description, comments, and attachments** (Step 2c), not the description alone.
 - Does the code fully implement the requested feature or fix the bug as described?
-- Brainstorm and verify edge cases: What happens if inputs are empty, zero, null, or unusually large? Are there edge cases implied by the ticket that the PR missed?
+- Flag requirements stated only in **comments** or **attachments** that the PR missed.
+- Brainstorm and verify edge cases: What happens if inputs are empty, zero, null, or unusually large? Are there edge cases implied by the ticket (including comment thread or mockups) that the PR missed?
 
 ### Repository Conventions
 
@@ -302,7 +323,7 @@ Generate a specific **Verdict** at the end of your summary based on the review r
 
 ### **Questions for the author** — things you genuinely can't tell from the diff (intent, missing context, cross-repo implications). Don't pad with rhetorical questions.
 
-### **Things you checked and they look good** — short list. Include which convention files were applied and whether they came from the local clone. This is calibration, not flattery; it tells me what you actually verified vs. what you skipped.
+### **Things you checked and they look good** — short list. Include which convention files were applied, whether Jira comments/attachments were reviewed, and whether they came from the local clone. This is calibration, not flattery; it tells me what you actually verified vs. what you skipped.
 
 ## Step 5 — Verdict and Commenting to the PR
 
