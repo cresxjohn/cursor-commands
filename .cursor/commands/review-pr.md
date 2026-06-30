@@ -294,7 +294,7 @@ Generate a specific **Verdict** at the end of your summary based on the review r
 
 - **Issue:** What's wrong
 - **Why it matters:** concrete failure mode, not "best practice says"
-- **Suggested fix:** code snippet if small — in the review report use a fenced block; when **posting to GitHub**, wrap code fixes in a ` ```suggestion ` block per Step 5. The chat report is full detail; the GitHub top-level review body is **verdict text only** (Step 5).
+- **Suggestion:** code snippet if small — in the review report use a fenced block; when **posting to GitHub**, wrap code fixes in a ` ```suggestion ` block per Step 5. The chat report is full detail; the GitHub top-level review body is **verdict text only** (Step 5).
 
 ### **Non-blocking suggestions** — same format, but stuff that would improve the change without gating it.
 
@@ -366,7 +366,7 @@ When creating line-by-line PR comment(s), use this format for each item:
 
 <Explanation>
 
-### Suggested fix:
+### Suggestion:
 
 <Short prose explanation, then a GitHub suggestion block — see below>
 ```
@@ -378,7 +378,7 @@ When the fix is a **code change**, use GitHub's native **suggestion** fence so t
 **Format:**
 
 ````markdown
-### Suggested fix:
+### Suggestion:
 
 <Brief explanation of the change.>
 
@@ -397,7 +397,7 @@ When the fix is a **code change**, use GitHub's native **suggestion** fence so t
 | Single-line fix | Comment on that line; suggestion block contains the one replacement line |
 | Multi-line fix | Use GitHub's multi-line comment API: set `start_line` (first line) and `line` (last line) on the same `side: "RIGHT"` hunk |
 | Context | Include unchanged surrounding lines inside the suggestion **only** when replacing a contiguous range (GitHub replaces the whole commented range) |
-| Non-code fixes | Prose-only under **Suggested fix:** (no suggestion block) — e.g. config steps, rename across repo, add a test file |
+| Non-code fixes | Prose-only under **Suggestion:** (no suggestion block) — e.g. config steps, rename across repo, add a test file |
 | JSON body | In `<REVIEW_ARTIFACT_ID>-review.json`, escape newlines as `\n`; keep the suggestion fence intact inside the string |
 
 **Single-line example** (inline comment on line 42):
@@ -411,7 +411,7 @@ Missing null guard before accessing `lease.tenant`.
 
 Throws at runtime when `tenant` is absent on draft leases.
 
-### Suggested fix:
+### Suggestion:
 
 Return early when tenant is missing.
 
@@ -428,7 +428,7 @@ if (!lease.tenant) return null;
   "start_line": 10,
   "line": 14,
   "side": "RIGHT",
-  "body": "### Issue:\n...\n\n### Why it matters:\n...\n\n### Suggested fix:\nReplace the try/catch swallow with explicit error mapping.\n\n```suggestion\n  try {\n    return await service.fetch(id);\n  } catch (err) {\n    throw mapServiceError(err);\n  }\n```"
+  "body": "### Issue:\n...\n\n### Why it matters:\n...\n\n### Suggestion:\nReplace the try/catch swallow with explicit error mapping.\n\n```suggestion\n  try {\n    return await service.fetch(id);\n  } catch (err) {\n    throw mapServiceError(err);\n  }\n```"
 }
 ```
 
@@ -460,7 +460,7 @@ if (!lease.tenant) return null;
       "path": "path/to/file.ts",
       "line": 42,
       "side": "RIGHT",
-      "body": "### Issue:\n...\n\n### Why it matters:\n...\n\n### Suggested fix:\n```suggestion\n...\n```"
+      "body": "### Issue:\n...\n\n### Why it matters:\n...\n\n### Suggestion:\n```suggestion\n...\n```"
     }
   ]
 }
