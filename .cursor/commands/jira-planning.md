@@ -27,84 +27,135 @@ Every ticket's technical detail MUST conform to the conventions already enforced
 - **Bugbot Rules:** Include the repo-root `.cursor/BUGBOT.md` (uppercase, inside `.cursor/`) plus any nested `.cursor/BUGBOT.md` found while traversing upward from the directories the tickets touch. Treat each as review criteria the planned implementation must satisfy. As of now, `bm/.cursor/BUGBOT.md` exists (backend review guidelines); `fm` may not have one yet. The correct location is `.cursor/BUGBOT.md` — NOT a lowercase `bugbot.md`, NOT a repo-root `BUGBOT.md`, and NOT `.cursor/rules/`. If a `BUGBOT.md` does not exist for a touched area, skip it silently — do not fabricate one.
 - **User/Global Standards:** Strictly no `any` type; add/update JSDoc on functions; no inline comments; remove unused imports/variables; deduplicate logic and extract helpers to reduce complexity; tests must reach **≥ 80% coverage**. Fold these into each ticket's Acceptance Criteria and Definition of Done.
 
+## Jira Write-Channel Constraints (CRITICAL)
+
+- The MCP description/comment channel accepts **Markdown only** and performs a **lossy** Markdown↔wiki conversion. It will:
+  - flatten `{panel}`, `!image!`, and `[text|url|smart-link]` smart cards
+  - escape/mangle `snake_case` and `*` inside inline code (e.g. `pure_application_person`)
+  - collapse tables and drop code-fence language hints in comments
+- **RULES:**
+  - **Never** rewrite existing FE ticket content **above** `Technical Details` via MCP — edit that block in the Jira editor by hand. MCP may only touch summary + `Technical Details` and below.
+  - Treat the **plan file (in-repo) as the canonical source**; Jira is a lossy mirror. Keep full contracts/diagrams in the plan, not the ticket body. Do not paste full TS into ticket bodies (Jira strips the `ts` fence and mangles types). Tickets reference `C1` and link to the plan.
+  - After any MCP write, **re-fetch and eyeball the rendered output** before declaring done.
+  - Use `h3.`/`###` for ticket section headings (h2 renders oversized in Jira).
+
 ## Instructions
 
 When I provide you with a set of Jira tickets (which are frontend tasks) or an Epic ticket link, please perform the following steps:
 
-1. **Understand the Project & Scan Tickets:**
-   - If an Epic ticket link or ID is provided, use your tools (like Jira integration/MCP) to scan and fetch the tickets inside that Epic (these could be stories, tasks, or bugs).
+1. **Step 0: Reconcile with live Jira before editing (recurring)**
+   - Before writing, fetch current `assignee`, `status`, issue links, and scope for every epic child. Treat Jira as authoritative for:
+     - **Assignee/Owner** — never assume; the staffing table must match live assignees.
+     - **Status** — reflect actual workflow state, not "To Do" by default.
+     - **Issue links** — the dependency map in the plan MUST equal the `Blocks`/`Relates` links in Jira. Remove links to cancelled tickets.
+   - Surface any mismatch to the user instead of silently overwriting.
+2. **Understand the Project & Scan Tickets:**
+   - If an Epic ticket link or ID is provided, use your tools (like Jira integration/MCP) to scan and fetch the tickets inside that Epic.
    - Analyze all the provided or fetched tickets to understand the full scope of the feature or project.
-2. **Gather Full Codebase Context (Mandatory):**
+3. **Gather Full Codebase Context (Mandatory):**
    - Explore both `fm` and `bm` projects using Grep/Glob/Read/SemanticSearch BEFORE planning.
    - Confirm existing services, endpoints, DTOs, models, RBAC roles, search/ES indexes, and feature flag conventions that are relevant to the tickets.
-   - Discover and read the convention files that apply to the directories the work touches: relevant `.cursor/rules/**/*.mdc` and any `.cursor/BUGBOT.md` (root + nested) in `fm` and `bm`. Capture the conventions they enforce so the planned implementation conforms and will pass Bugbot review.
+   - Discover and read the convention files that apply to the directories the work touches.
    - Do not produce ticket details until you have verified the relevant context in the codebase.
-3. **Solidify API Contracts (Source of Truth):**
-   - Define every API contract **once** in a dedicated `API Contracts` section, each with a stable **Contract ID** (e.g. `C1`, `C2`). FE and BE tickets MUST reference the contract by ID instead of re-declaring shapes, so the contract cannot drift between the two sides.
-   - Each contract must be complete and unambiguous: operation type (GraphQL Query/Mutation or REST), exact request shape (including pagination/filter/sort params), exact response shape, error cases, and the owning BE ticket.
-   - Lock contracts EARLY so FE can build against them with mocked responses while BE is in flight. Any later change to a contract must bump/annotate the Contract ID and call out the affected FE and BE tickets.
-4. **Implementation Strategy & Dependency Planning:**
+4. **Solidify API Contracts (Source of Truth):**
+   - Define every API contract **once** in a dedicated `API Contracts` section, each with a stable **Contract ID** (e.g. `C1`, `C2`). FE and BE tickets MUST reference the contract by ID instead of re-declaring shapes.
+   - Each contract must be complete and unambiguous.
+   - Lock contracts EARLY so FE can build against them with mocked responses while BE is in flight.
+5. **Implementation Strategy & Dependency Planning:**
    - Internally plan out how to implement the project, grounded in the actual architecture you observed.
    - Identify and sequence ticket dependencies, ensuring prerequisites are handled early and highlighting the critical path.
-   - Enable parallel work by locking the API contracts upfront (see step 3) and suggesting approaches such as FE using mocked responses while BE endpoints are in progress.
-   - Classify dependencies by risk (high/medium/low), pushing high-risk items earlier in the sprint, and creating spikes or discovery tickets where needed.
+   - Enable parallel work by locking the API contracts upfront.
    - Coordinate cross-team dependencies (e.g., with the Data team) and align on ownership and timelines.
    - Define fallback strategies (e.g., feature flags, or scoped delivery) in case dependencies are delayed.
-5. **Plan Out Backend (BE) Tickets:**
+   - **Scope Changes & Cancellations:** When a ticket is descoped/cancelled: transition it to Canceled in Jira, remove its issue links, add an explicit "Out of Scope for V1" callout in Execution Strategy, and sweep ALL plan artifacts for references (including removing fields from API contracts, dependency nodes, staffing rows, and all `Blocks` links).
+6. **Plan Out Backend (BE) Tickets:**
    Granularize the backend requirements into specific BE tickets for better task distribution. Each BE ticket MUST include:
-   - **Endpoints:** New endpoints needed, including HTTP methods, paths, request payloads, and response shapes — aligned with existing service conventions in `bm`. Reference the locked **Contract ID** rather than duplicating shapes.
-     - **CRITICAL:** Separate each endpoint into its own distinct `Endpoint Spec` block. Do NOT combine multiple endpoints into a single block.
-     - **Pagination & Filtering:** Include pagination (`page`, `limit`) and filtering/search/sort parameters in the request payload shape where applicable.
-     - **Storage & Performance Strategy:** Identify the best storage for performance (Postgres DB vs ElasticSearch) and justify it.
+   - **Endpoints:** New endpoints needed, including HTTP methods, paths, request payloads, and response shapes. Reference the locked **Contract ID**.
+     - **CRITICAL:** Separate each endpoint into its own distinct `Endpoint Spec` block.
    - **ElasticSearch (when reads are served from ES):**
-     - **CRITICAL — Define the query:** Specify the real `ElasticSearchIndex` (e.g. `pure_work_order`), the `buildElasticSearchQuery` call from `@purepm/nest-common`, the `Elastic.*` query interface, filters/sort/pagination, and any script fields. Do NOT hand-wave the query.
-     - **CRITICAL — Flag BE work + create a ticket:** If the index/mapping/query does not yet support what the FE needs (new field, new filter, new analyzer, new index), this is **net-new BE work** — call it out explicitly and create a dedicated BE ticket for the index/mapping/query change and its reindex.
-     - **Write → ES sync:** If a Postgres write must surface in an ES-backed read, specify the sync mechanism (Pub/Sub event → `*-elasticsearch-processor` reindex) and note the **eventual-consistency sync delay**. Any FE ticket that reads this data after a CRUD write MUST plan an optimistic update (see step 6).
-   - **RBAC:** Reference the actual existing roles/personas/permissions/guards from the codebase. Per `bm/.cursor/BUGBOT.md`, RBAC and multi-tenant (tenant/brand/property) scoping MUST be enforced on every new endpoint.
-   - **Data Models:** The source for queries and placeholders for shapes. Use real database/schema/table/field names where available; otherwise mark as `TBD - pending Data team`. New columns must be nullable or have defaults (backward-compatible).
-   - **DB Entities:** When a ticket introduces or modifies a data model, include a sub-task to add or update the corresponding entity in the `@purepm/db-entities` package. Specify the entity name, fields to add/update (with types), and any related types/exports. Skip this only if no entity work is needed.
-     - **CRITICAL:** Include Sequelize associations (`hasMany`, `belongsTo`, etc.) and indexing requirements (e.g., unique constraints, foreign key indexes) for the entities.
-   - **Technical Details:** Any other relevant backend context.
-6. **Enhance Frontend (FE) Tickets:**
-   For the provided or fetched FE tickets, add specific technical details. If an FE ticket does not require API wiring (e.g., UI-only changes), skip the API-related properties.
-   - **Endpoints:** Which BE endpoints/contracts should be consumed (reference the **Contract ID**; must match the BE tickets exactly).
-   - **Payload Shapes:** Reference the locked Contract ID. Only restate a shape inline when it aids the implementer; if restated, it MUST match the contract verbatim.
-   - **Field Mapping:** How the API response payload fields map to the frontend view/UI fields, and how UI inputs map to request payloads.
-   - **Optimistic Update (when reading CRUD'd data from ES):** If the screen creates/updates/deletes data whose list/detail is read from an ES-backed endpoint, the ES read lags behind the write (reindex sync delay). The FE MUST apply an **optimistic update** to local state/store/cache immediately on success, then reconcile on the next server fetch, and **roll back** on mutation failure. Specify exactly which store/cache is updated and the reconciliation trigger.
-   - **Feature Flags:** Add feature flags as needed, following the exact naming convention verified in `launchDarklyFlags.ts`.
-   - **Feature Flag Ticket:** If a new feature flag is introduced, create a dedicated FE ticket (e.g., Ticket #1) to implement it. Specify the FF name, the scope to gate (exact components and routes), and include a tip for local development (e.g., pointing to local build files like `"file:../../@libs/purepm-lovs"` in `package.json`).
+     - **CRITICAL — Define the query:** Specify the real `ElasticSearchIndex`, the `buildElasticSearchQuery` call, etc.
+     - **CRITICAL — Flag BE work + create a ticket:** If the index/mapping/query does not yet support what the FE needs, create a dedicated BE ticket for the index/mapping/query change and its reindex.
+     - **Write → ES sync:** Specify the sync mechanism and note the **eventual-consistency sync delay**.
+   - **RBAC:** Reference the actual existing roles/personas/permissions/guards from the codebase.
+   - **Data Models & DB Entities:** Define the source for queries and placeholders for shapes. Include sub-tasks to add or update corresponding entities in `@purepm/db-entities`.
+7. **Plan Out Data (DATA) Tickets:**
+   - Explicitly plan DATA tickets with a `[DATA]` summary prefix and a separate staffing row.
+   - **Never** fold index/SQL work into FE or BE assignees.
+8. **Enhance Frontend (FE) Tickets:**
+   For the provided or fetched FE tickets, add specific technical details.
+   - **Endpoints:** Which BE endpoints/contracts should be consumed (reference the **Contract ID**).
+   - **Field Mapping:** How the API response payload fields map to the frontend view/UI fields.
+   - **Optimistic Update:** If reading CRUD'd data from an ES-backed endpoint, specify exactly which store/cache is updated optimistically and the reconciliation trigger. **Note:** For read-only list screens (no inline edits), do not optimistically update; instead, refetch on return/navigation.
+   - **Feature Flags:** Add feature flags as needed.
+9. **Epic Implementer Summary (optional but recommended):**
+   - Maintain a synced subset of the plan as a single epic comment.
+   - Keep a **staging file in-repo** (`<epic-key>-comment-<id>.md`) generated from the synced sections; edit there, then publish via `jira_edit_comment`.
+   - **Omit mermaid** (paste dependency bullets instead) and **keep tables minimal** — both degrade in the comment renderer.
+   - Exclude the per-ticket specs and registry (too long / lossy); link to them.
+10. **Requirement Traceability:**
+    - Trace each net-new field/behavior to Figma / epic PRD, then assign ownership: FE = display + interaction, BE = persistence / business rules, DATA = index derivation / SQL.
+11. **New-Ticket Creation Playbook:**
+    - When adding epic children: mirror an existing sibling ticket, set project/issue type/priority/parent/team, use `[FE]`/`[BE]`/`[DATA]` prefix, create `Blocks` links, and update registry + dependency map + per-ticket spec in one pass.
+12. **Corruption Recovery Playbook:**
+    - If MCP damages a ticket: restore from Jira change history (`jira_batch_get_changelogs`) or manual editor paste — **not** another MCP rewrite of the damaged block.
 
 ## Output Format Requirements
 
-Your response must be formatted in clean **Markdown** with proper typography (headings, bold property labels, code blocks for payloads, inline code for identifiers), ready to be directly copy-pasted manually into Jira tickets. Please strictly use the following format. **Ensure you add a blank line between tickets for better readability.**
+Your response must be formatted in clean **Markdown** with proper typography. Please strictly use the following format. **Ensure you add a blank line between tickets for better readability.**
 
 Every ticket MUST be comprehensive enough for a junior developer to start without follow-up questions. That means each ticket includes: a clear description, **Acceptance Criteria**, ordered **Implementation Steps**, **Files / Modules to Touch** (real paths), **Testing** requirements (≥ 80% coverage), **Dependencies** (Blocked by / Blocks), **Conventions to Follow**, an **Estimate**, and a **Definition of Done**.
 
 Typography rules:
-- Use `##` for top-level sections (Execution Strategy & Dependencies, API Contracts, FE Tickets, BE Tickets).
-- Use `###` for each individual ticket header.
-- Use **bold** for every property label (e.g., **Title**, **Description**, **Technical Details**).
-- Wrap identifiers (endpoint paths, service names, entity names, flag names, field names, index names, role names) in inline code using backticks.
-- Use fenced code blocks (```ts / ```json) for request/response payload shapes, ES queries, and entity field definitions.
-- Use unordered lists for sub-properties; keep nesting consistent (2 spaces per level).
+- Use `##` for top-level sections.
+- Use `###` for each individual ticket header, using real Jira keys if they exist (e.g. `### PMHUB-XXXXX — <Title>`).
+- Use `####` for ticket sub-sections (Goal, Done when, Files / Modules, etc.) instead of bold labels, as bold labels collapse into walls of text in Jira.
+- Wrap identifiers in inline code using backticks.
+- Use fenced code blocks (```ts / ```json) for payloads, but keep them in the plan, not in the Jira ticket body.
+- Use unordered lists for sub-properties; keep nesting consistent.
 
 ```markdown
+## Context Snapshot
+
+- **What exists today:** <brief summary of current implementation>
+- **Architecture Decision Rationale:** <e.g. why a new ES index vs extending an existing one>
+- **Locked Business Rules:** <key rules that dictate behavior>
+- **Code References:** <links to relevant files/enums>
+
 ## Execution Strategy & Dependencies
 
 - **Critical Path & Sequencing:** <brief summary of the critical path and order of operations>
 - **Parallel Work Plan:** <how FE/BE work in parallel via locked API contracts + FE mocking>
-- **Risks & Fallbacks:** <high/medium risk items, cross-team (e.g. Data team) dependencies, ES reindex/sync risks, and fallback strategies like feature flags>
-- **Ticket Dependency Map:**
-  - `BE-1` → unblocks `FE-2`, `FE-3`
-  - `BE-2 (ES index/query)` → unblocks `FE-4`
+- **Risks & Fallbacks:** <high/medium risk items, cross-team dependencies, ES reindex/sync risks, and fallback strategies>
+- **Out of Scope (V1):** <explicitly list any cancelled or deferred scope/tickets>
+- **Ticket Dependency Map:** (Must round-trip to Jira `Blocks`/`Relates` links. `Blocks` = hard sequencing, `Relates` = paired work)
+  - `PMHUB-XXXX1` → unblocks `PMHUB-XXXX2`, `PMHUB-XXXX3`
+  - `PMHUB-XXXX4 (ES index/query)` → unblocks `PMHUB-XXXX5`
+
+## Jira Ticket Registry
+
+> Source of truth for key / alias / owner / status.
+
+| Jira key | Plan alias | Owner | Status |
+|----------|-----------|-------|--------|
+| `PMHUB-XXXXX` | <alias> | <owner> | <status> |
+
+## Staffing & Schedule
+
+**Team:** <list team members and roles>
+**Target:** <e.g., 2-week target>
+**If we slip:** <fallback plan>
+
+| Who | Week 1 | Week 2 |
+|-----|--------|--------|
+| **Name (Role)** | <tasks> | <tasks> |
 
 ## API Contracts (Source of Truth)
 
-> Lock these first. FE and BE tickets reference these by **Contract ID**; do not redeclare shapes elsewhere.
+> Lock these first. FE and BE tickets reference these by **Contract ID**; do not redeclare shapes elsewhere. The canonical contract lives in the plan/repo only; do not paste full TS into Jira ticket bodies.
 
 ### `C1` — <Operation Name> (<GraphQL Query | GraphQL Mutation | REST>)
 
-- **Owned by:** `<BE ticket id>`  ·  **Consumed by:** `<FE ticket id(s)>`
+- **Owned by:** `PMHUB-XXXXX`  ·  **Consumed by:** `PMHUB-YYYYY`
 - **Service / Path:** `<service-name>` · `<METHOD> <path>`
 - **Request Shape:**
   ```ts
@@ -125,112 +176,137 @@ Typography rules:
   ```
 - **Error Cases:** `<PEC code / status>` → `<meaning>`
 
+## Open Items
+
+- <Unresolved TBDs, e.g. source of a field, sign-off needed>
+
 ## FE Tickets
 
-### Ticket #1 — Implement Feature Flag for <Feature>
+### `PMHUB-XXXXX` — Implement Feature Flag for <Feature> ([link](<jira-link>)) · <Owner>
 
-- **Description:**
-  - **Overview:** <short overview>
-- **Technical Details:**
-  - **Feature Flag Name:** `<LaunchDarklyFlags.FLAG_NAME>`
-  - **Scope to Gate (Components/Routes):**
-    - **UI Component:** `<path/to/component.vue>` - <how to gate>
-    - **Route Guard:** `<path/to/routes.ts>` - <how to gate>
-  - **Tip:** For local development, point to local build files by pointing to `"file:../../@libs/purepm-lovs"` in `package.json`.
-- **Acceptance Criteria:**
-  - [ ] <observable, testable outcome>
-- **Definition of Done:** Code merged, tests ≥ 80% coverage, lint/typecheck clean, flag defaults safe.
+#### Goal
+<what the user sees / can do once this ships>
 
-### `<TICKET-NUMBER>` — <Short Title> ([link](<jira-link>))
+#### Technical Details
+- **Feature Flag Name:** `<LaunchDarklyFlags.FLAG_NAME>`
+- **Scope to Gate (Components/Routes):**
+  - **UI Component:** `<path/to/component.vue>` - <how to gate>
+  - **Route Guard:** `<path/to/routes.ts>` - <how to gate>
+- **Tip:** For local development, point to local build files by pointing to `"file:../../@libs/purepm-lovs"` in `package.json`.
 
-- **Description:**
-  - **Overview:** <what the user sees / can do once this ships>
-- **Technical Details:** (Skip API properties if UI only)
-  - **Consumes Contract(s):** `C1` (`<METHOD> <path>`, <GraphQL/REST>)
-  - **FE View Field Mapping → Request:**
-    - `<UI Input>` → `requestField`
-  - **Response → FE View Field Mapping:**
-    - `responseField` → `<UI Element>`
-  - **Optimistic Update:** (only if reading CRUD'd data from an ES-backed endpoint)
-    - **Why:** `<endpoint>` reads from ES index `<index>`, which lags the write by the reindex sync delay.
-    - **Store/Cache to update:** `<pinia store / query cache>` - apply change immediately on mutation success.
-    - **Reconcile:** refetch on `<trigger>`; **Rollback:** revert local change if the mutation errors.
-- **Implementation Steps:**
-  1. <ordered, concrete step referencing real files/components>
-  2. ...
-- **Files / Modules to Touch:**
-  - `<fm/packages/@apps/.../Component.vue>`
-  - `<store / composable / dataTest.ts>`
-- **Testing:** Unit/component tests for <cases>; ≥ 80% coverage; add `data-test` constants for new interactive elements.
-- **Dependencies:** Blocked by `<ticket/contract>`; Blocks `<ticket>`.
-- **Feature Flag:** `<FF_NAME>`
-- **Conventions to Follow:** (omit if none apply)
-  - `<.cursor/rules/...mdc>` - <one-line note on what to honor>
-  - `<fm/.cursor/BUGBOT.md if present>` - <Bugbot criterion to satisfy>
-- **Estimate:** `<S | M | L>` (`<points/days>`)
-- **Definition of Done:** AC met, tests ≥ 80%, lint/typecheck clean, no `any`, JSDoc added, behind flag if applicable.
+#### Done when
+- [ ] <observable, testable outcome>
+- [ ] Code merged, tests ≥ 80% coverage, lint/typecheck clean, flag defaults safe.
+
+#### Files / Modules to Touch
+- `<path/to/file>`
+
+#### Testing
+Unit/component tests for <cases>; ≥ 80% coverage.
+
+#### Dependencies
+Blocked by `<ticket/contract>`; Blocks `<ticket>`. Link existing tickets for behavioral AC (e.g. `PMHUB-XXXXX` Scenario 5) instead of re-writing full scenario prose.
+
+#### Conventions
+- `<.cursor/rules/...mdc>` - <one-line note on what to honor>
+
+#### Estimate
+`<S | M | L>` (`<points/days>`)
+
+### `PMHUB-YYYYY` — <Short Title> ([link](<jira-link>)) · <Owner>
+
+#### Goal
+<what the user sees / can do once this ships>
+
+#### Technical Details
+- **Consumes Contract(s):** `C1` (`<METHOD> <path>`, <GraphQL/REST>)
+- **FE View Field Mapping → Request:**
+  - `<UI Input>` → `requestField`
+- **Response → FE View Field Mapping:**
+  - `responseField` → `<UI Element>`
+- **Optimistic Update:** (only if reading CRUD'd data from an ES-backed endpoint)
+  - **Why:** `<endpoint>` reads from ES index `<index>`, which lags the write by the reindex sync delay.
+  - **Store/Cache to update:** `<pinia store / query cache>` - apply change immediately on mutation success.
+  - **Reconcile:** refetch on `<trigger>`; **Rollback:** revert local change if the mutation errors.
+
+#### Implementation Steps
+1. <ordered, concrete step referencing real files/components>
+2. ...
+
+#### Done when
+- [ ] AC met, tests ≥ 80%, lint/typecheck clean, no `any`, JSDoc added, behind flag if applicable.
+
+#### Files / Modules to Touch
+- `<fm/packages/@apps/.../Component.vue>`
+- `<store / composable / dataTest.ts>`
+
+#### Testing
+Unit/component tests for <cases>; ≥ 80% coverage; add `data-test` constants for new interactive elements.
+
+#### Dependencies
+Blocked by `<ticket/contract>`; Blocks `<ticket>`. Link existing tickets for behavioral AC (e.g. `PMHUB-XXXXX` Scenario 5) instead of re-writing full scenario prose.
+
+#### Conventions
+- `<.cursor/rules/...mdc>` - <one-line note on what to honor>
+- `<fm/.cursor/BUGBOT.md if present>` - <Bugbot criterion to satisfy>
+
+#### Estimate
+`<S | M | L>` (`<points/days>`)
 
 ## BE Tickets
 
-### Ticket #1 — <Short Title>
+### `PMHUB-ZZZZZ` — <Short Title> ([link](<jira-link>)) · <Owner>
 
-- **Title:** <Title>
-- **Description:**
-  - **Overview:** <short overview>
-- **Technical Details:**
-  - **Implements Contract(s):** `C1`
-  - **Endpoint Spec: `<endpointName>` (<Query/Mutation/REST>)**
-    - **Service:** `<service-name>`
-    - **Path:** `<path>`
-    - **Method:** `GET` | `POST` | `PUT` | `PATCH` | `DELETE`
-    - **RBAC:** `<role/permission/guard name(s) from codebase>` (+ tenant/brand/property scoping)
-    - **Storage & Performance Strategy:** `<Postgres DB | ElasticSearch>` - <justification, N+1/index considerations>
-    - **Request / Response:** See Contract `C1`.
-  - **Endpoint Spec: `<anotherEndpointName>` (<Query/Mutation/REST>)**
-    - ... (Separate block for each endpoint)
-  - **ElasticSearch:** (only if this read is ES-backed)
-    - **Index:** `<ElasticSearchIndex.X>` (e.g. `pure_work_order`)
-    - **Query:** built via `buildElasticSearchQuery` (`@purepm/nest-common`) using `Elastic.<IQueryInterface>`
-      ```ts
-      buildElasticSearchQuery(paginatedQuery, {
-        corporation_id: corporationId,
-        brand_id_field: 'brand_id',
-        default_sort: '<field>',
-      });
-      ```
-    - **New ES Work?:** `<None | New field/mapping/analyzer/index>` - if not None, **see dedicated BE ticket** `<id>` for the mapping/query change + reindex.
-    - **Write → ES Sync:** `<Pub/Sub event → *-elasticsearch-processor reindex>`; note eventual-consistency delay (FE must optimistically update).
-  - **Data Models Mapping:** (request → db fields if mutation; response → db fields if query)
-    - **Database:** `<database>` · **Schema:** `<schema>` · **Table:** `<table>`
-    - `requestField` ↔ `column_name`
-  - **DB Entities (`@purepm/db-entities`):**
-    - **Entity:** `<EntityName>` (Add | Update | N/A)
-    - **Fields to Add/Update:**
-      ```ts
-      fieldName: string;
-      ```
-    - **Associations:**
-      - `<hasMany/belongsTo>` `<TargetEntity>` (foreignKey: `<fk>`)
-    - **Indexes:**
-      - `<Index description>`
-- **Acceptance Criteria:**
-  - [ ] <observable, testable outcome>
-- **Implementation Steps:**
-  1. <ordered, concrete step referencing real services/files>
-  2. ...
-- **Files / Modules to Touch:**
-  - `<bm/packages/@services/.../*.resolver.ts | *.service.ts>`
-  - `<bm/packages/@libs/db-entities/...>`
-- **Testing:** Unit tests for resolver/service + validation; ≥ 80% coverage.
-- **Dependencies:** Blocked by `<ticket/contract>`; Blocks `<ticket>`.
-- **Conventions to Follow:** (omit if none apply)
-  - `bm/.cursor/BUGBOT.md` - <e.g. PureError/PEC, RBAC + tenant scoping, no `any`, backward-compatible response>
-  - `<.cursor/rules/...mdc>` - <one-line note on what to honor>
-- **Estimate:** `<S | M | L>` (`<points/days>`)
-- **Definition of Done:** AC met, tests ≥ 80%, lint/typecheck clean, no `any`, JSDoc added, RBAC + validation enforced, backward-compatible.
+#### Goal
+<short overview>
 
-### Ticket #2 — <Short Title>
+#### Technical Details
+- **Implements Contract(s):** `C1`
+- **Endpoint Spec: `<endpointName>` (<Query/Mutation/REST>)**
+  - **Service:** `<service-name>`
+  - **Path:** `<path>`
+  - **Method:** `GET` | `POST` | `PUT` | `PATCH` | `DELETE`
+  - **RBAC:** `<role/permission/guard name(s) from codebase>` (+ tenant/brand/property scoping)
+  - **Storage & Performance Strategy:** `<Postgres DB | ElasticSearch>` - <justification, N+1/index considerations>
+  - **Request / Response:** See Contract `C1`.
+- **ElasticSearch:** (only if this read is ES-backed)
+  - **Index:** `<ElasticSearchIndex.X>` (e.g. `pure_work_order`)
+  - **Query:** built via `buildElasticSearchQuery` (`@purepm/nest-common`) using `Elastic.<IQueryInterface>`
+  - **New ES Work?:** `<None | New field/mapping/analyzer/index>` - if not None, **see dedicated BE ticket** `<id>` for the mapping/query change + reindex.
+  - **Write → ES Sync:** `<Pub/Sub event → *-elasticsearch-processor reindex>`; note eventual-consistency delay (FE must optimistically update).
+- **Data Models Mapping:** (request → db fields if mutation; response → db fields if query)
+  - **Database:** `<database>` · **Schema:** `<schema>` · **Table:** `<table>`
+  - `requestField` ↔ `column_name`
+- **DB Entities (`@purepm/db-entities`):**
+  - **Entity:** `<EntityName>` (Add | Update | N/A)
+  - **Fields to Add/Update:**
+    ```ts
+    fieldName: string;
+    ```
+  - **Associations:** `<hasMany/belongsTo>` `<TargetEntity>` (foreignKey: `<fk>`)
+  - **Indexes:** `<Index description>`
 
-- **Title:** <Title>
-- **Description:** ...
-```
+#### Implementation Steps
+1. <ordered, concrete step referencing real services/files>
+2. ...
+
+#### Done when
+- [ ] <observable, testable outcome>
+- [ ] AC met, tests ≥ 80%, lint/typecheck clean, no `any`, JSDoc added, RBAC + validation enforced, backward-compatible.
+
+#### Files / Modules to Touch
+- `<bm/packages/@services/.../*.resolver.ts | *.service.ts>`
+- `<bm/packages/@libs/db-entities/...>`
+
+#### Testing
+Unit tests for resolver/service + validation; ≥ 80% coverage.
+
+#### Dependencies
+Blocked by `<ticket/contract>`; Blocks `<ticket>`. Link existing tickets for behavioral AC (e.g. `PMHUB-XXXXX` Scenario 5) instead of re-writing full scenario prose.
+
+#### Conventions
+- `bm/.cursor/BUGBOT.md` - <e.g. PureError/PEC, RBAC + tenant scoping, no `any`, backward-compatible response>
+- `<.cursor/rules/...mdc>` - <one-line note on what to honor>
+
+#### Estimate
+`<S | M | L>` (`<points/days>`)
