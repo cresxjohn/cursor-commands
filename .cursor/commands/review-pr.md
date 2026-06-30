@@ -2,10 +2,11 @@
 
 Perform a rigorous code review of the changes described by a **GitHub pull request or branch link**—not whatever happens to be checked out locally. Act as a skeptical principal engineer reviewer, not a cheerleader.
 
-**Hybrid context model:**
+**Hybrid context model & Execution Strategy:**
 
 - **PR scope (diff, metadata, file contents, code search):** GitHub only via `gh` or the GitHub API. Do not use local `git diff`, `git checkout`, or the checked-out branch to determine what changed.
 - **Repository conventions (Cursor rules, Bugbot):** Read from the matching **local workspace clone** without changing its branch or working tree. Do not fetch `.cursor/rules` from GitHub unless no local clone exists.
+- **Maximize Parallelism:** Group independent tool calls. Once the PR metadata and file list are known (Step 1), fetch GitHub file contents (Step 2a), local Cursor rules (Step 2b), and Jira ticket details (Step 2c) **concurrently in a single parallel tool call batch** to speed up the review.
 
 ## Step 0 — GitHub link (required)
 
@@ -56,7 +57,7 @@ If `gh` is missing or unauthenticated, stop and tell me to run `gh auth login` (
 
 ## Step 1 — Establish scope via GitHub
 
-Fetch metadata and the patch from GitHub only.
+Fetch metadata and the patch from GitHub only. **Run these initial `gh` commands concurrently where possible.**
 
 ### Resolve refs and SHAs
 
@@ -68,6 +69,7 @@ gh pr diff <n> --repo owner/repo
 ```
 
 Store `HEAD_SHA` = `headRefOid`, `HEAD_REF` = `headRefName`, `BASE_REF` = `baseRefName`, `PR_NUMBER` = `number` (when present).
+**Look for a Jira ticket ID (e.g., `XXX-1234`) in the PR `title` or `body`.**
 
 **Compare or tree** (no PR number):
 
@@ -89,11 +91,15 @@ gh api repos/owner/repo/pulls/<n>/files --paginate
 
 If the diff is large (>1000 lines or >30 files), say so up front and propose a review strategy (review by subsystem, or ask which area to prioritize) before generating findings. Do not silently truncate.
 
-## Step 2 — Read context via GitHub
+## Step 2 — Gather deep context (Run 2a, 2b, 2c in parallel)
 
-For every non-trivial changed file, pull **full file contents at `HEAD_SHA`** (and at `BASE_REF` when before/after comparison matters)—not just diff hunks.
+Once the diff and file list are known, gather all necessary context **concurrently in a single tool call batch**.
 
-### Fetch a file at a ref
+### 2a. Read context via GitHub
+
+For every non-trivial changed file, pull **full file contents at `HEAD_SHA`** (and at `BASE_REF` when before/after comparison matters)—not just diff hunks. **Execute these fetches in parallel.**
+
+#### Fetch a file at a ref
 
 ```bash
 gh api repos/owner/repo/contents/<path> --field ref=<HEAD_SHA-or-ref> -q .content | base64 -d
@@ -107,7 +113,7 @@ gh api repos/owner/repo/contents/<dir>?ref=<ref>
 
 Use `-q` / `--jq` to extract fields; decode base64 content in the shell when posting inline comments is not needed.
 
-### When the diff alone is not enough
+#### When the diff alone is not enough
 
 - **Signature changes:** search for callers in the same repo:
 
@@ -123,11 +129,11 @@ Use `-q` / `--jq` to extract fields; decode base64 content in the shell when pos
 
 If the change has obvious cross-repo implications (e.g. a BE API contract change with a FE consumer elsewhere), call that out as a **Question for the author**—do not silently assume access to sibling repos; use code search scoped to those repos only if URLs are provided.
 
-## Step 2b — Resolve local clone and load conventions
+### 2b. Resolve local clone and load conventions
 
 Before evaluating the diff, load coding conventions from the **local workspace**, not GitHub.
 
-### Map `owner/repo` → local root
+#### Map `owner/repo` → local root
 
 1. Enumerate workspace roots (multi-root workspaces may include `fm`, `bm`, etc.).
 2. For each root, resolve the GitHub remote and match `owner/repo`:
@@ -140,7 +146,7 @@ Before evaluating the diff, load coding conventions from the **local workspace**
 
 3. The first matching root is `LOCAL_REPO_ROOT`. If none match, note “no local clone for owner/repo” and fall back to GitHub (below).
 
-### Read Cursor rules locally (read-only)
+#### Read Cursor rules locally (read-only)
 
 **Do not** checkout, pull, stash, reset, or otherwise change branch or working tree in `LOCAL_REPO_ROOT`. Reviews may produce files in the clone; concurrent reviews and in-progress work must not be disturbed.
 
@@ -177,23 +183,37 @@ gh api repos/owner/repo/contents/.cursor/rules?ref=<HEAD_SHA>
 
 If neither local rules nor GitHub rules exist, note “no `.cursor/rules` found” and proceed with general standards only.
 
-### Apply conventions in the review
+#### Apply conventions in the review
 
 1. Summarize the loaded rules on the fly (always-applied + path-scoped for this diff).
 2. Include this summary as a rubric in the review under **Repository conventions**.
 3. Actively evaluate the PR/branch against them and call out violations — cite the rule file path (e.g. `.cursor/rules/services/error-handling.mdc`).
 
+### 2c. Fetch Business Requirements (Jira)
+
+If a Jira ticket ID was found in the PR title or body:
+1. Use the `user-mcp-atlassian` MCP server (e.g., `jira_get_issue`) to fetch the ticket details.
+2. Read the description, focusing specifically on the **Acceptance Criteria** and **Steps to Reproduce** (if it's a bug).
+3. If no Jira ticket is found, note "No Jira ticket found in PR" and evaluate based on the PR description alone.
+
 ## Step 3 — Review dimensions
 
-Evaluate the diff against each of these. Skip dimensions that genuinely don't apply, but say so briefly so I know you considered them.
+Evaluate the diff against each of these. Skip dimensions that genuinely don't apply, but say so briefly so I know you considered them. Be rigorous: brainstorm edge cases, missing error handling, and unhandled states.
+
+### Requirements & Acceptance Criteria
+
+- Cross-check the diff against the Jira ticket's Acceptance Criteria. 
+- Does the code fully implement the requested feature or fix the bug as described?
+- Brainstorm and verify edge cases: What happens if inputs are empty, zero, null, or unusually large? Are there edge cases implied by the ticket that the PR missed?
 
 ### Repository Conventions
 
 Use the rubric built in Step 2b. Do not re-fetch rules from GitHub when a local clone was resolved.
 
-### Correctness
+### Correctness & Edge Cases
 
 - Off-by-one, null/undefined handling, unhandled promise rejections, swallowed errors.
+- **Edge cases:** Unhappy paths (API failures, network timeouts), empty arrays/lists, unexpected falsy values, malformed data structures.
 - Concurrency: shared mutable state, race conditions, missing transactions, non-idempotent handlers.
 - **Date & timezone handling**: business dates stored as noon UTC, displayed in the brand's local timezone. Flag any `new Date(string)` without explicit UTC parsing, any `.toISOString().split('T')[0]` patterns, and any date math that could cross a DST boundary.
 
@@ -225,8 +245,8 @@ Use the rubric built in Step 2b. Do not re-fetch rules from GitHub when a local 
 
 - State that should be derived isn't being stored.
 - Effects with missing or over-broad dependencies.
+- **Edge cases:** Error states, loading spinners, empty states, and partial data states are present for every async UI.
 - Accessibility: keyboard nav, focus management, alt text on meaningful images.
-- Error/loading/empty states present for every async UI.
 - Date display uses brand timezone, not user's local.
 
 ### Feature flags (LaunchDarkly)
