@@ -49,6 +49,7 @@ Every ticket's technical detail MUST conform to the conventions already enforced
 - **RULES:**
   - **Never** rewrite existing FE ticket content **above** `Technical Details` via MCP — edit that block in the Jira editor by hand. MCP may only touch summary + `Technical Details` and below.
   - Treat the **plan file (in-repo) as the canonical source**; Jira is a lossy mirror. Keep full contracts/diagrams in the plan, not the ticket body. Do not paste full TS into ticket bodies (Jira strips the `ts` fence and mangles types). Tickets reference `C1` and link to the plan.
+  - **The plan file MUST contain the FULL per-ticket spec for every ticket — never just a summary or a one-line bullet.** Each ticket in the plan must include all required sub-sections (Goal, API, Technical Details, Implementation Steps, Done when, Files / Modules to Touch, Testing, Dependencies, Conventions, Estimate). A long plan is expected and acceptable; completeness beats brevity. Summaries are only allowed in the optional Epic Implementer Summary comment, never as a replacement for the per-ticket specs in the plan.
   - After any MCP write, **re-fetch and eyeball the rendered output** before declaring done.
   - Use `h3.`/`###` for ticket section headings (h2 renders oversized in Jira).
 
@@ -98,6 +99,13 @@ When I provide you with a set of Jira tickets (which are frontend tasks) or an E
 7. **Plan Out Data (DATA) Tickets:**
    - Explicitly plan DATA tickets with a `[DATA]` summary prefix and a separate staffing row.
    - **Never** fold index/SQL work into FE or BE assignees.
+   - **Plan the best path and justify it (REQUIRED).** For every DATA ticket, do not just pick a data source — evaluate the realistic options (e.g. Postgres query/join vs an existing Elasticsearch index vs a new ES index/mapping vs BigQuery vs a derived/materialized view) and explicitly recommend ONE as the "best path", grounded in the codebase. Each DATA ticket MUST contain a dedicated `#### Best path & why` sub-section that:
+     - Lists the options considered (each one line).
+     - States the chosen option clearly.
+     - Justifies the choice with concrete reasons tied to the real schema/indexes you verified — correctness/source-of-truth (reuse the same source the related feature already trusts, to avoid drift), brand/tenant scoping reality (e.g. a table that has no direct `brand_id` and must be derived), performance/cost (indexes, full scans, aggregation cost), consistency/freshness (sync lag), and effort/risk.
+     - Names the REAL index/table/field (e.g. `ElasticSearchIndex.BUILDING = 'pure_building'`, `core.portfolio_team_building_map`) — never invent one.
+     - Notes the trade-offs of the rejected options in one line so reviewers see they were considered.
+   - If the best path genuinely cannot be determined without input (e.g. the Data team owns the schema), still recommend a default and mark the final decision as an Open Item with the specific question.
 8. **Enhance Frontend (FE) Tickets:**
    For the provided or fetched FE tickets, add specific technical details.
    - **API:** If the ticket issues HTTP calls, add a short `#### API` section: "Consumes **`C1`** only — see API Contracts for service, URL, auth, and shapes." **Do not** repeat method, path, or base URL on the FE ticket.
