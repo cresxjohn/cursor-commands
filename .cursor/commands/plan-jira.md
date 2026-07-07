@@ -29,20 +29,19 @@ When this command is executed, follow these steps meticulously:
 ### 2b. Ticket type: feature vs bug (drives feature flags)
 - From Jira (`issuetype.name` and any relevant labels), classify the ticket:
   - **Bug-only work:** issue type is **Bug** (or an equivalent defect type your org uses), or the ticket is explicitly a defect/regression fix with no new user-facing capability. **Do not** add or plan a new LaunchDarkly flag for these.
-  - **Feature work:** issue types such as **Story**, **Epic**, **Task** (when delivering new capability), **Improvement**, **New Feature**, or any type that introduces new behavior/UI the business may want to gate. **Do** plan a new flag in `@purepm/purepm-lovs` (see below).
+  - **Feature work:** issue types such as **Story**, **Epic**, **Task** (when delivering new capability), **Improvement**, **New Feature**, or any type that introduces new behavior/UI the business may want to gate. **Do** plan a new flag in `@purepm/purepm-lovs` ONLY if it involves frontend changes (see below). **Do not** add or plan a new LaunchDarkly flag for backend-only changes.
 - If classification is unclear, state the assumption in **Open Questions** and default to **no new flag** until confirmed (avoids polluting `LaunchDarklyFlags`).
 
-### 2c. Feature flags (`purepm-lovs`) — **features only**
-When the ticket is classified as **feature** work:
+### 2c. Feature flags (`purepm-lovs`) — **frontend features only**
+When the ticket is classified as **feature** work AND involves frontend changes:
 - Add the flag in **`bm/packages/@libs/purepm-lovs/src/global/launchDarklyFlags.ts`** (exported via `src/global/index.ts`). Do not introduce parallel flag registries elsewhere for the same capability.
 - **Naming:** Follow existing patterns in that file. Prefer:
-  - **Product/UI:** `PMS_<DOMAIN>_<AREA>_<...>_ENABLED` (e.g. `PMS_LEASING_…`, `PMS_CORE_…`, `PMS_COMMS_HUB_…`, `PMS_REPORTING_…`). Place the enum member under the matching section comment (Global, Navigation, Hub-specific, BE `SERVICE_*`, etc.).
-  - **Backend-only toggles:** `SERVICE_<SERVICE>_<AREA>_ENABLED` to mirror existing `SERVICE_*` entries.
+  - **Product/UI:** `PMS_<DOMAIN>_<AREA>_<...>_ENABLED` (e.g. `PMS_LEASING_…`, `PMS_CORE_…`, `PMS_COMMS_HUB_…`, `PMS_REPORTING_…`). Place the enum member under the matching section comment (Global, Navigation, Hub-specific, etc.).
   - Enum **key** and **string value** should align with neighbors (usually the key and the LaunchDarkly key string are the same style, often identical).
 - The plan must include: register flag in LaunchDarkly (or your team’s process), wire the app/service to read it, and default/off behavior when the flag is false.
 - **Do not** bump `@purepm/purepm-lovs` versions across other frontend apps or monorepo packages as part of this command; the human will publish/bump consumers manually. The plan should only call out the lovs change and the app(s) that **need** the new enum at runtime.
 
-When the ticket is **bug-only:** omit feature-flag steps entirely (no new enum entry, no LD rollout section for a new key).
+When the ticket is **bug-only** or **backend-only:** omit feature-flag steps entirely (no new enum entry, no LD rollout section for a new key).
 
 ### 2d. Local testing with `file:` dependency on `purepm-lovs`
 When the implementation touches `@purepm/purepm-lovs` and a frontend app under `fm` needs to test the change locally:
@@ -75,7 +74,7 @@ Provide a comprehensive markdown response with the following sections:
 - **Ticket type (plan use):** **Feature** or **Bug-only** — one line stating how this was determined from Jira (`issuetype` / labels).
 - **Key Requirements**: Bullet points of all explicit requirements from the description and comments.
 - **Context/Constraints**: Any technical constraints, design considerations (from attachments), or business logic rules.
-- **New LaunchDarkly flag (features only):** If **Feature**, the proposed enum key and string (e.g. `PMS_LEASING_FUNCTION_EXAMPLE_ENABLED = 'PMS_LEASING_FUNCTION_EXAMPLE_ENABLED'`) and which section of `launchDarklyFlags.ts` it belongs in. If **Bug-only**, state **None**.
+- **New LaunchDarkly flag (frontend features only):** If **Feature** AND involves frontend UI/behavior changes, the proposed enum key and string (e.g. `PMS_LEASING_FUNCTION_EXAMPLE_ENABLED = 'PMS_LEASING_FUNCTION_EXAMPLE_ENABLED'`) and which section of `launchDarklyFlags.ts` it belongs in. If **Bug-only** or **Backend-only**, state **None**.
 
 ### 🔍 Current State Analysis
 - **Frontend (`fm`)**: What exists today and what needs to change.
@@ -87,8 +86,8 @@ Break down the implementation into clear, ordered steps. For each step, include:
 - The logic/changes required.
 - Any new dependencies or configuration changes.
 
-**Phase 0: Feature flag (`bm` — `@purepm/purepm-lovs`) — skip entirely for Bug-only tickets**
-- [ ] **Feature tickets only:** Add enum entry to `bm/packages/@libs/purepm-lovs/src/global/launchDarklyFlags.ts` in the correct domain section; run `npm run build` in that package; use a `file:` dependency only in the `fm` app(s) actively being changed for local verification (correct relative path per app); do not bump lovs versions elsewhere.
+**Phase 0: Feature flag (`bm` — `@purepm/purepm-lovs`) — skip entirely for Bug-only or Backend-only tickets**
+- [ ] **Frontend Feature tickets only:** Add enum entry to `bm/packages/@libs/purepm-lovs/src/global/launchDarklyFlags.ts` in the correct domain section; run `npm run build` in that package; use a `file:` dependency only in the `fm` app(s) actively being changed for local verification (correct relative path per app); do not bump lovs versions elsewhere.
 
 **Phase 1: Database / Schema (if applicable)**
 - [ ] Step 1...
@@ -112,5 +111,5 @@ Break down the implementation into clear, ordered steps. For each step, include:
 - **Observe Code Patterns & Avoid Anti-Patterns:** Always mimic the existing codebase's architectural style, naming conventions, and design patterns. Do not introduce novel solutions or anti-patterns that deviate from established repository standards.
 - **Thoroughness is paramount:** Do not hallucinate, but do not skip over minor details mentioned in comments.
 - **Actionable steps:** The plan should be clear enough that an agent or developer can immediately start executing Phase 1 (or Phase 0 for feature-flag work when applicable).
-- **Feature flags:** Prefer domain-accurate names and file placement consistent with `launchDarklyFlags.ts`; never add a flag for bug-only tickets by default.
+- **Feature flags:** Prefer domain-accurate names and file placement consistent with `launchDarklyFlags.ts`; never add a flag for bug-only or backend-only tickets by default.
 - **Code snippets:** Include brief code snippets or interface definitions in the plan if it helps clarify the required architecture or API contracts.
