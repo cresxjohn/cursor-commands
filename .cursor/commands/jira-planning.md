@@ -179,6 +179,7 @@ Typography rules:
 ## API Contracts (Source of Truth)
 
 > Lock these first. FE and BE tickets reference these by **Contract ID** only — do not redeclare endpoint URLs, auth, or TypeScript shapes on individual tickets. The canonical contract lives in the plan/repo; do not paste full TS into Jira ticket bodies.
+> **Wire casing:** Document whether the request/response payloads use `camelCase` or `snake_case` on the wire (e.g., if a global `SnakeCaseInterceptor` applies to responses). Provide the TS shapes in the exact casing they appear on the wire.
 
 ### `C1` — <Operation Name> (<REST | GraphQL Query | GraphQL Mutation>)
 
@@ -250,6 +251,7 @@ Typography rules:
 #### Request shape (TypeScript)
 
 ```ts
+// Wire format: camelCase
 {
   field: string;
   page?: number;
@@ -262,8 +264,9 @@ Typography rules:
 #### Response shape (TypeScript)
 
 ```ts
+// Wire format: snake_case (via SnakeCaseInterceptor)
 {
-  data: Array<{ field: string }>;
+  data: Array<{ field_name: string }>;
   total: number;
 }
 ```
