@@ -36,7 +36,7 @@ Use **plain paragraphs**, not a bullet list. Separate parts with blank lines. Ea
 
 **Still to do.** One line each for `fm` and `bm` (gaps only); mention flag wiring only when a new flag is indicated. If the `-f` flag was provided, include suggested fixes in code snippets to illustrate the required changes. Do not show code snippets that are identical to the existing codebase; only provide snippets that actually demonstrate the suggested new or modified code.
 
-**Rough effort.** e.g. small / medium / large plus a short reason.
+**AI Suggested SP.** Estimate the effort using the following story points structure and provide a short reason: 1 (Up to 30 minutes), 2 (Up to 1 hour), 3 (Up to half a day / ~4 hrs), 5 (1 day), 8 (2-3 days), 13 (~1 week), 21 (~2 weeks), 34 (~1 month). The effort should encompass dev, testing (local + dev envs), creating PRs, and deployment to dev env efforts.
 
 The entire answer should still fit **~15 short lines** total (excluding code snippets); combine or shorten parts when needed.
 
